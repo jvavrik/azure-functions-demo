@@ -2,6 +2,8 @@ using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using System.Text;
 
 namespace Jvavrik.Functions
 {
@@ -15,11 +17,13 @@ namespace Jvavrik.Functions
         }
 
         [Function("FavoriteGame")]
-        public async Task<MultiResponse> Run([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
+        public async Task<MultiResponse> Run([HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData req)
         {
             _logger.LogInformation("C# HTTP trigger function processed a request.");
 
             var body = await new StreamReader(req.Body).ReadToEndAsync();
+            var bodyModel = Newtonsoft.Json.JsonConvert.DeserializeObject<FavoriteGameModel>(body);
+            bodyModel.id = Guid.NewGuid().ToString();
             _logger.LogInformation(body);
             
             var response = req.CreateResponse(HttpStatusCode.OK);
@@ -28,28 +32,23 @@ namespace Jvavrik.Functions
             response.WriteString($"Thank you for your submission! {body}");
             return new MultiResponse()
                 {
-                    FavoriteGame = new FavoriteGameModel
-                    {
-                        Name = body,
-                        id = Guid.NewGuid().ToString(),
-                    },
+                    FavoriteGame = bodyModel,
                     HttpResponse = response
                 };
         }
-    }
 
-    public class MultiResponse{
-        [CosmosDBOutput(
-            databaseName: "FavoriteGame",
-            containerName:"Games", 
-            Connection = "CosmosConnection", 
-            CreateIfNotExists =true)]
-            public FavoriteGameModel FavoriteGame {get;set;}
-            public HttpResponseData HttpResponse { get; set; }
-    }
-
-    public class FavoriteGameModel{
-        public string Name {get;set;}
-        public string id {get;set;}
+        [Function("FavoriteGameGet")]
+        public async Task<IEnumerable<FavoriteGameModel>> Get([HttpTrigger(AuthorizationLevel.Function, "get")] HttpRequestData req,
+         [CosmosDBInput(
+                databaseName: "FavoriteGame",
+                containerName: "Games",
+                Connection = "CosmosConnection",
+                SqlQuery ="SELECT * FROM c ORDER BY c._ts DESC")] IEnumerable<FavoriteGameModel> games
+            )
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+            
+            return games;
+        }
     }
 }
